@@ -2,6 +2,7 @@ from tqdm import tqdm
 import network
 import utils
 import os
+import sys
 import random
 import argparse
 import numpy as np
@@ -43,7 +44,10 @@ def get_argparser():
                         help="apply separable conv to decoder and aspp")
     parser.add_argument("--output_stride", type=int, default=16, choices=[8, 16])
     parser.add_argument("--new_implement", type=bool, default=True, help="new implementation not in the original repo")
-    parser.add_argument("--mc_dropout", type=bool, default=False, help="Monte Carlo dropout, only active for resnet backbone")
+    # Please select only one of the following
+    parser.add_argument("--mc_dropout", type=bool, default=False, help="Enable Monte Carlo dropout")
+    parser.add_argument("--deep_ensemble", type=bool, default=False, help="Enable deep ensemble")
+    parser.add_argument("--model_num", type=int, default=0, help="Model number for deep ensemble")
 
     # Train Options
     parser.add_argument("--test_only", action='store_true', default=False)
@@ -211,8 +215,8 @@ def validate(opts, model, loader, device, metrics, ret_samples_ids=None):
     return score, ret_samples
 
 
-def main():
-    opts = get_argparser().parse_args()
+def main(args):
+    opts = get_argparser().parse_args(args)
     if opts.dataset.lower() == 'voc':
         opts.num_classes = 21
     elif opts.dataset.lower() == 'cityscapes':
@@ -248,8 +252,15 @@ def main():
 
     # Set up model (all models are 'constructed at network.modeling)
     if opts.new_implement == True:
-        model = network.modeling.__dict__[opts.model](num_classes=opts.num_classes, output_stride=opts.output_stride, mc_dropout=opts.mc_dropout)
-        model.load_state_dict( torch.load( Path('models', 'best_deeplabv3plus_resnet101_cityscapes_os16.pth.tar') )['model_state']  )
+        if opts.mc_dropout == True:
+            model = network.modeling.__dict__[opts.model](num_classes=opts.num_classes, output_stride=opts.output_stride, mc_dropout=opts.mc_dropout)
+            model.load_state_dict( torch.load( Path('models', 'best_deeplabv3plus_resnet101_cityscapes_os16.pth.tar') )['model_state']  )
+        elif opts.deep_ensemble == True:
+            model = network.modeling.__dict__[opts.model](num_classes=opts.num_classes, output_stride=opts.output_stride)
+            model.load_state_dict( torch.load( Path('models', 'best_deeplabv3plus_resnet101_cityscapes_os16.pth.tar') )['model_state']  )
+            sd = model.state_dict()
+            for layer in sd.keys():
+                sd[layer] = np.random.normal(loc=sd[layer], scale=0.2)
     else:
         model = network.modeling.__dict__[opts.model](num_classes=opts.num_classes, output_stride=opts.output_stride)
     if opts.separable_conv and 'plus' in opts.model:
@@ -355,8 +366,12 @@ def main():
                 interval_loss = 0.0
 
             if (cur_itrs) % opts.val_interval == 0:
-                save_ckpt('checkpoints/latest_%s_%s_os%d.pth' %
-                          (opts.model, opts.dataset, opts.output_stride))
+                if opts.deep_ensemble == True:
+                    save_ckpt('checkpoints/latest_%s_%s_os%d_%d.pth' %
+                            (opts.model, opts.dataset, opts.output_stride, opts.model_num))
+                else:
+                    save_ckpt('checkpoints/latest_%s_%s_os%d.pth' %
+                            (opts.model, opts.dataset, opts.output_stride))
                 print("validation...")
                 model.eval()
                 val_score, ret_samples = validate(
@@ -365,8 +380,12 @@ def main():
                 print(metrics.to_str(val_score))
                 if val_score['Mean IoU'] > best_score:  # save best model
                     best_score = val_score['Mean IoU']
-                    save_ckpt('checkpoints/best_%s_%s_os%d.pth' %
-                              (opts.model, opts.dataset, opts.output_stride))
+                    if opts.deep_ensemble == True:
+                        save_ckpt('checkpoints/best_%s_%s_os%d_%d.pth' %
+                                (opts.model, opts.dataset, opts.output_stride, opts.model_num))
+                    else:
+                        save_ckpt('checkpoints/best_%s_%s_os%d.pth' %
+                                (opts.model, opts.dataset, opts.output_stride))
 
                 if vis is not None:  # visualize validation score and samples
                     vis.vis_scalar("[Val] Overall Acc", cur_itrs, val_score['Overall Acc'])
@@ -389,4 +408,4 @@ def main():
             return
 
 if __name__ == '__main__':
-    main()
+    main(sys.argv[1:])

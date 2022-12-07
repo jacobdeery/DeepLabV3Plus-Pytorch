@@ -1,11 +1,10 @@
 """
-Run temperature scaling on a single image
+Run temperature scaling
 """
 
 import torch
 from torch.utils import data
 from pathlib import Path
-from PIL import Image
 
 import network
 from datasets import Cityscapes
