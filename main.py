@@ -15,6 +15,7 @@ import torch
 import torch.nn as nn
 from utils.visualizer import Visualizer
 
+from pathlib import Path
 from PIL import Image
 import matplotlib
 import matplotlib.pyplot as plt
@@ -41,6 +42,8 @@ def get_argparser():
     parser.add_argument("--separable_conv", action='store_true', default=False,
                         help="apply separable conv to decoder and aspp")
     parser.add_argument("--output_stride", type=int, default=16, choices=[8, 16])
+    parser.add_argument("--new_implement", type=bool, default=True, help="new implementation not in the original repo")
+    parser.add_argument("--mc_dropout", type=bool, default=False, help="Monte Carlo dropout, only active for resnet backbone")
 
     # Train Options
     parser.add_argument("--test_only", action='store_true', default=False)
@@ -244,7 +247,11 @@ def main():
           (opts.dataset, len(train_dst), len(val_dst)))
 
     # Set up model (all models are 'constructed at network.modeling)
-    model = network.modeling.__dict__[opts.model](num_classes=opts.num_classes, output_stride=opts.output_stride)
+    if opts.new_implement == True:
+        model = network.modeling.__dict__[opts.model](num_classes=opts.num_classes, output_stride=opts.output_stride, mc_dropout=opts.mc_dropout)
+        model.load_state_dict( torch.load( Path('models', 'best_deeplabv3plus_resnet101_cityscapes_os16.pth.tar') )['model_state']  )
+    else:
+        model = network.modeling.__dict__[opts.model](num_classes=opts.num_classes, output_stride=opts.output_stride)
     if opts.separable_conv and 'plus' in opts.model:
         network.convert_to_separable_conv(model.classifier)
     utils.set_bn_momentum(model.backbone, momentum=0.01)
@@ -378,6 +385,8 @@ def main():
             if cur_itrs >= opts.total_itrs:
                 return
 
+        if opts.new_implement == True and cur_epochs == 10:
+            return
 
 if __name__ == '__main__':
     main()

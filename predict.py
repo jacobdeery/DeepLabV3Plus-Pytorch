@@ -3,6 +3,7 @@ from tqdm import tqdm
 import network
 import utils
 import os
+import sys
 import random
 import argparse
 import numpy as np
@@ -15,6 +16,7 @@ from metrics import StreamSegMetrics
 import torch
 import torch.nn as nn
 
+from pathlib import Path
 from PIL import Image
 import matplotlib
 import matplotlib.pyplot as plt
@@ -40,6 +42,9 @@ def get_argparser():
     parser.add_argument("--separable_conv", action='store_true', default=False,
                         help="apply separable conv to decoder and aspp")
     parser.add_argument("--output_stride", type=int, default=16, choices=[8, 16])
+    parser.add_argument("--new_implement", type=bool, default=True, help="new implementation not in the original repo")
+    parser.add_argument("--mc_dropout", type=bool, default=False, help="Monte Carlo dropout, only active for resnet backbone")
+    parser.add_argument("--input_num", type=int, default = 1, help="Used to save all the images from MC Dropout loop")
 
     # Train Options
     parser.add_argument("--save_val_results_to", default=None,
@@ -58,8 +63,8 @@ def get_argparser():
                         help="GPU ID")
     return parser
 
-def main():
-    opts = get_argparser().parse_args()
+def main(args):
+    opts = get_argparser().parse_args(args)
     if opts.dataset.lower() == 'voc':
         opts.num_classes = 21
         decode_fn = VOCSegmentation.decode_target
@@ -82,7 +87,11 @@ def main():
         image_files.append(opts.input)
     
     # Set up model (all models are 'constructed at network.modeling)
-    model = network.modeling.__dict__[opts.model](num_classes=opts.num_classes, output_stride=opts.output_stride)
+    if opts.new_implement == True:
+        model = network.modeling.__dict__[opts.model](num_classes=opts.num_classes, output_stride=opts.output_stride, mc_dropout=opts.mc_dropout)
+        model.load_state_dict( torch.load( Path('checkpoints', 'best_deeplabv3plus_resnet101_cityscapes_os16.pth') )['model_state']  ) # model we want to evaluate
+    else:
+        model = network.modeling.__dict__[opts.model](num_classes=opts.num_classes, output_stride=opts.output_stride)
     if opts.separable_conv and 'plus' in opts.model:
         network.convert_to_separable_conv(model.classifier)
     utils.set_bn_momentum(model.backbone, momentum=0.01)
@@ -91,13 +100,13 @@ def main():
         # https://github.com/VainF/DeepLabV3Plus-Pytorch/issues/8#issuecomment-605601402, @PytaichukBohdan
         checkpoint = torch.load(opts.ckpt, map_location=torch.device('cpu'))
         model.load_state_dict(checkpoint["model_state"])
-        model = nn.DataParallel(model)
+        # model = nn.DataParallel(model)
         model.to(device)
         print("Resume model from %s" % opts.ckpt)
         del checkpoint
     else:
         print("[!] Retrain")
-        model = nn.DataParallel(model)
+        # model = nn.DataParallel(model)
         model.to(device)
 
     #denorm = utils.Denormalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # denormalization for ori images
@@ -120,6 +129,8 @@ def main():
         os.makedirs(opts.save_val_results_to, exist_ok=True)
     with torch.no_grad():
         model = model.eval()
+        if opts.mc_dropout == True:
+            model.classifier.aspp.project[3].train() # Setting MC Dropout layer to train
         for img_path in tqdm(image_files):
             ext = os.path.basename(img_path).split('.')[-1]
             img_name = os.path.basename(img_path)[:-len(ext)-1]
@@ -127,11 +138,18 @@ def main():
             img = transform(img).unsqueeze(0) # To tensor of NCHW
             img = img.to(device)
             
-            pred = model(img).max(1)[1].cpu().numpy()[0] # HW
+            output = model(img)
+            pred = output.max(1)[1].cpu().numpy()[0] # HW
             colorized_preds = decode_fn(pred).astype('uint8')
             colorized_preds = Image.fromarray(colorized_preds)
             if opts.save_val_results_to:
-                colorized_preds.save(os.path.join(opts.save_val_results_to, img_name+'.png'))
+                if opts.new_implement == True:
+                    colorized_preds.save(os.path.join(opts.save_val_results_to, img_name+'_'+str(opts.input_num)+'.png'))
+                else:
+                    colorized_preds.save(os.path.join(opts.save_val_results_to, img_name+'.png'))
+            
+            if opts.new_implement == True:
+                return output
 
 if __name__ == '__main__':
-    main()
+    main(sys.argv[1:])
