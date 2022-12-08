@@ -9,7 +9,7 @@ import numpy as np
 from torch.utils import data
 from datasets import VOCSegmentation, Cityscapes
 from utils import ext_transforms as et
-from metrics import StreamSegMetrics
+from metrics import StreamSegMetrics, get_uncertainty_msp
 
 import torch
 import torch.nn as nn
@@ -18,6 +18,7 @@ from utils.visualizer import Visualizer
 from PIL import Image
 import matplotlib
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 
 
 def get_argparser():
@@ -174,7 +175,9 @@ def validate(opts, model, loader, device, metrics, ret_samples_ids=None):
             preds = outputs.detach().max(dim=1)[1].cpu().numpy()
             targets = labels.cpu().numpy()
 
-            metrics.update(targets, preds)
+            uncertainties = get_uncertainty_msp(outputs).cpu().numpy()
+
+            metrics.update(targets, preds, uncertainties)
             if ret_samples_ids is not None and i in ret_samples_ids:  # get vis samples
                 ret_samples.append(
                     (images[0].detach().cpu().numpy(), targets[0], preds[0]))
@@ -184,14 +187,19 @@ def validate(opts, model, loader, device, metrics, ret_samples_ids=None):
                     image = images[i].detach().cpu().numpy()
                     target = targets[i]
                     pred = preds[i]
+                    unc = uncertainties[i]
 
                     image = (denorm(image) * 255).transpose(1, 2, 0).astype(np.uint8)
                     target = loader.dataset.decode_target(target).astype(np.uint8)
                     pred = loader.dataset.decode_target(pred).astype(np.uint8)
 
+                    cmap = cm.get_cmap('inferno')
+                    unc_img = (255 * cmap(unc)).astype(np.uint8)
+
                     Image.fromarray(image).save('results/%d_image.png' % img_id)
                     Image.fromarray(target).save('results/%d_target.png' % img_id)
                     Image.fromarray(pred).save('results/%d_pred.png' % img_id)
+                    Image.fromarray(unc_img).save('results/%d_unc.png' % img_id)
 
                     fig = plt.figure()
                     plt.imshow(image)

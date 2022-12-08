@@ -30,20 +30,21 @@ class StreamSegMetrics(_StreamMetrics):
         self.n_classes = n_classes
         self.confusion_matrix = np.zeros((n_classes, n_classes))
 
-    def update(self, label_trues, label_preds):
-        for lt, lp in zip(label_trues, label_preds):
+        self.num_bins = 10
+        self.bounds = np.linspace(0, 1, self.num_bins + 1)
+        self.ece_curve = np.zeros((3, self.num_bins))
+
+    def update(self, label_trues, label_preds, uncertainties):
+        for lt, lp, unc in zip(label_trues, label_preds, uncertainties):
             self.confusion_matrix += self._fast_hist( lt.flatten(), lp.flatten() )
-    
+            self.update_ece(lt, lp, unc)
+
     @staticmethod
     def to_str(results):
         string = "\n"
         for k, v in results.items():
             if k!="Class IoU":
                 string += "%s: %f\n"%(k, v)
-        
-        #string+='Class IoU:\n'
-        #for k, v in results['Class IoU'].items():
-        #    string += "\tclass %d: %f\n"%(k, v)
         return string
 
     def _fast_hist(self, label_true, label_pred):
@@ -53,6 +54,36 @@ class StreamSegMetrics(_StreamMetrics):
             minlength=self.n_classes ** 2,
         ).reshape(self.n_classes, self.n_classes)
         return hist
+
+    def update_ece(self, label_true, label_pred, unc):
+        mask = (label_true >= 0) & (label_true < self.n_classes)
+
+        pixel_correct = label_pred[mask] == label_true[mask]
+        conf = (1 - unc)[mask]
+
+        for i in range(self.num_bins):
+            lower = self.bounds[i]
+            upper = self.bounds[i + 1]
+
+            bin_idxs = (conf >= lower) & (conf < upper)
+            num_in_bin = np.sum(bin_idxs)
+
+            if num_in_bin == 0:
+                continue
+
+            mean_correct = np.mean(pixel_correct[bin_idxs])
+            mean_conf = np.mean(conf[bin_idxs])
+
+            old_px = self.ece_curve[0, i]
+            old_corr = self.ece_curve[1, i]
+            old_conf = self.ece_curve[2, i]
+
+            new_px = old_px + num_in_bin
+            new_corr = np.nan_to_num((old_corr * old_px + mean_correct * num_in_bin) / new_px)
+            new_conf = np.nan_to_num((old_conf * old_px + mean_conf * num_in_bin) / new_px)
+
+            self.ece_curve[:, i] = [new_px, new_corr, new_conf]
+
 
     def get_results(self):
         """Returns accuracy score evaluation result.
@@ -71,12 +102,15 @@ class StreamSegMetrics(_StreamMetrics):
         fwavacc = (freq[freq > 0] * iu[freq > 0]).sum()
         cls_iu = dict(zip(range(self.n_classes), iu))
 
+        ece = np.average(np.abs(self.ece_curve[1] - self.ece_curve[2]), weights=self.ece_curve[0])
+
         return {
                 "Overall Acc": acc,
                 "Mean Acc": acc_cls,
                 "FreqW Acc": fwavacc,
                 "Mean IoU": mean_iu,
                 "Class IoU": cls_iu,
+                "ECE": ece
             }
         
     def reset(self):

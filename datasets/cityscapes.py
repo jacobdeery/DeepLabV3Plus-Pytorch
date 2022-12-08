@@ -88,8 +88,8 @@ class Cityscapes(data.Dataset):
                              ' or split="val"')
 
         if not os.path.isdir(self.images_dir) or not os.path.isdir(self.targets_dir):
-            raise RuntimeError('Dataset not found or incomplete. Please make sure all required folders for the'
-                               ' specified "split" and "mode" are inside the "root" directory')
+            raise RuntimeError(f'Dataset not found or incomplete. Please make sure all required folders for the'
+                               f' specified "split" ({split}) and "mode" ({self.mode}) are inside the "root" directory')
         
         for city in os.listdir(self.images_dir):
             img_dir = os.path.join(self.images_dir, city)
