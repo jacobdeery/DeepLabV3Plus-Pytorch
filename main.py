@@ -7,7 +7,7 @@ import argparse
 import numpy as np
 
 from torch.utils import data
-from datasets import VOCSegmentation, Cityscapes
+from datasets import VOCSegmentation, Cityscapes, WildDash
 from utils import ext_transforms as et
 from metrics import StreamSegMetrics, get_uncertainty_msp
 
@@ -28,7 +28,7 @@ def get_argparser():
     parser.add_argument("--data_root", type=str, default='./datasets/data',
                         help="path to Dataset")
     parser.add_argument("--dataset", type=str, default='voc',
-                        choices=['voc', 'cityscapes'], help='Name of dataset')
+                        choices=['voc', 'cityscapes', 'wilddash'], help='Name of dataset')
     parser.add_argument("--num_classes", type=int, default=None,
                         help="num classes (default: None)")
 
@@ -151,6 +151,17 @@ def get_dataset(opts):
                                split='train', transform=train_transform)
         val_dst = Cityscapes(root=opts.data_root,
                              split='val', transform=val_transform)
+
+    if opts.dataset == 'wilddash':
+        val_transform = et.ExtCompose([
+            et.ExtToTensor(),
+            et.ExtNormalize(mean=[0.485, 0.456, 0.406],
+                            std=[0.229, 0.224, 0.225]),
+        ])
+
+        train_dst = WildDash(root=opts.data_root, transform=val_transform)
+        val_dst = WildDash(root=opts.data_root, transform=val_transform)
+
     return train_dst, val_dst
 
 
@@ -167,6 +178,9 @@ def validate(opts, model, loader, device, metrics, ret_samples_ids=None):
 
     with torch.no_grad():
         for i, (images, labels) in tqdm(enumerate(loader)):
+
+            if i > 4:
+                break
 
             images = images.to(device, dtype=torch.float32)
             labels = labels.to(device, dtype=torch.long)
@@ -201,7 +215,7 @@ def validate(opts, model, loader, device, metrics, ret_samples_ids=None):
                     Image.fromarray(pred).save('results/%d_pred.png' % img_id)
                     Image.fromarray(unc_img).save('results/%d_unc.png' % img_id)
 
-                    fig = plt.figure()
+                    fig = plt.figure(figsize=(12.8, 9.6))
                     plt.imshow(image)
                     plt.axis('off')
                     plt.imshow(pred, alpha=0.7)
@@ -221,6 +235,8 @@ def main():
     if opts.dataset.lower() == 'voc':
         opts.num_classes = 21
     elif opts.dataset.lower() == 'cityscapes':
+        opts.num_classes = 19
+    elif opts.dataset.lower() == 'wilddash':
         opts.num_classes = 19
 
     # Setup visualization
