@@ -179,9 +179,6 @@ def validate(opts, model, loader, device, metrics, ret_samples_ids=None):
     with torch.no_grad():
         for i, (images, labels) in tqdm(enumerate(loader)):
 
-            if i > 4:
-                break
-
             images = images.to(device, dtype=torch.float32)
             labels = labels.to(device, dtype=torch.long)
 
