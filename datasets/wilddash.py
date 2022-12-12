@@ -49,9 +49,10 @@ class WildDash(data.Dataset):
         CityscapesClass('van',                  35, 20, 'vehicle', 7, True, False, (0, 40, 120)),
         CityscapesClass('billboard',            36, 21, 'object', 3, False, False, (174, 46, 67)),
         CityscapesClass('streetlight',          37, 22, 'object', 3, False, False, (210, 170, 100)),
-        CityscapesClass('road-marking',         38, 23, 'flat', 1, False, False, (196, 176, 128)),
-        CityscapesClass('license plate',        -1, 255, 'vehicle', 7, False, True, (0, 0, 142)),
-    ]
+        CityscapesClass('road-marking',         38, 23, 'flat', 1, False, False, (196, 176, 128))]
+    for i in range(39, 81):
+        classes.append(CityscapesClass('class', i, 255, 'object', 3, False, False, (0, 0, 0)))
+    classes.append(CityscapesClass('license plate',        -1, 255, 'vehicle', 7, False, True, (0, 0, 142)))
 
     train_id_to_color = [c.color for c in classes if (c.train_id != -1 and c.train_id != 255)]
     train_id_to_color.append([0, 0, 0])
@@ -65,8 +66,8 @@ class WildDash(data.Dataset):
     def __init__(self, root, transform=None):
         self.root = os.path.expanduser(root)
 
-        self.images_dir = os.path.join(self.root, 'images')
-        self.targets_dir = os.path.join(self.root, 'panoptic')
+        self.images_dir = os.path.join(self.root, 'val')
+        self.targets_dir = os.path.join(self.root, 'semantic')
 
         self.images = []
         self.targets = []
@@ -76,12 +77,12 @@ class WildDash(data.Dataset):
         for file_name in os.listdir(self.images_dir):
             self.images.append(os.path.join(self.images_dir, file_name))
 
-            target_name = f'{file_name[:-4]}.png'
+            target_name = f'{file_name[:-4]}_labelIds.png'
             self.targets.append(os.path.join(self.targets_dir, target_name))
 
     @classmethod
     def encode_target(cls, target):
-        return cls.color_to_train_id[tuple(np.array(target).T)].T
+        return cls.id_to_train_id[np.array(target)]
 
     @classmethod
     def decode_target(cls, target):

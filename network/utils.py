@@ -4,6 +4,7 @@ import numpy as np
 import torch.nn.functional as F
 from collections import OrderedDict
 
+
 class _SimpleSegmentationModel(nn.Module):
     def __init__(self, backbone, classifier):
         super(_SimpleSegmentationModel, self).__init__()
@@ -16,6 +17,27 @@ class _SimpleSegmentationModel(nn.Module):
         x = self.classifier(features)
         x = F.interpolate(x, size=input_shape, mode='bilinear', align_corners=False)
         return x
+
+
+class _EvidentialSegmentationModel(nn.Module):
+    def __init__(self, backbone, evidence_regressor):
+        super(_EvidentialSegmentationModel, self).__init__()
+        self.backbone = backbone
+        self.evidence_regressor = evidence_regressor
+
+    # Returns Dirichlet parameters, _not_ class probabilities
+    def forward(self, x):
+        input_shape = x.shape[-2:]
+        features = self.backbone(x)
+        x = self.evidence_regressor(features)
+        x = F.interpolate(x, size=input_shape, mode='bilinear', align_corners=False)
+        return x
+
+    def postprocess(self, alphas):
+        strength = alphas.sum(axis=1)
+        prob = alphas / strength[:, None, :, :]
+        uncertainty = alphas.shape[1] / strength
+        return prob, uncertainty
 
 
 class IntermediateLayerGetter(nn.ModuleDict):

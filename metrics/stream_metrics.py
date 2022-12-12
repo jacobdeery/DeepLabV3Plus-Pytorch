@@ -83,6 +83,7 @@ class StreamSegMetrics(_StreamMetrics):
             new_conf = np.nan_to_num((old_conf * old_px + mean_conf * num_in_bin) / new_px)
 
             self.ece_curve[:, i] = [new_px, new_corr, new_conf]
+        # breakpoint()
 
     def get_results(self):
         """Returns accuracy score evaluation result.

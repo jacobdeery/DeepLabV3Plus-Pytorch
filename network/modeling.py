@@ -1,5 +1,5 @@
 from .utils import IntermediateLayerGetter
-from ._deeplab import DeepLabHead, DeepLabHeadV3Plus, DeepLabV3
+from ._deeplab import DeepLabHead, DeepLabHeadV3Plus, DeepLabV3, EvidentialHead, EvidentialDeepLab
 from .backbone import (
     resnet,
     mobilenetv2,
@@ -48,12 +48,19 @@ def _segm_resnet(name, backbone_name, num_classes, output_stride, pretrained_bac
     if name=='deeplabv3plus':
         return_layers = {'layer4': 'out', 'layer1': 'low_level'}
         classifier = DeepLabHeadV3Plus(inplanes, low_level_planes, num_classes, aspp_dilate)
+        architecture = DeepLabV3
+    elif name == 'evidentialdeeplab':
+        return_layers = {'layer4': 'out', 'layer1': 'low_level'}
+        classifier = EvidentialHead(inplanes, low_level_planes, num_classes, aspp_dilate)
+        architecture = EvidentialDeepLab
     elif name=='deeplabv3':
         return_layers = {'layer4': 'out'}
         classifier = DeepLabHead(inplanes , num_classes, aspp_dilate)
-    backbone = IntermediateLayerGetter(backbone, return_layers=return_layers)
+        architecture = DeepLabV3
 
-    model = DeepLabV3(backbone, classifier)
+    backbone = IntermediateLayerGetter(backbone, return_layers=return_layers)
+    model = architecture(backbone, classifier)
+
     return model
 
 
@@ -199,6 +206,17 @@ def deeplabv3plus_resnet101(num_classes=21, output_stride=8, pretrained_backbone
         pretrained_backbone (bool): If True, use the pretrained backbone.
     """
     return _load_model('deeplabv3plus', 'resnet101', num_classes, output_stride=output_stride, pretrained_backbone=pretrained_backbone)
+
+
+def evidentialdeeplab_resnet101(num_classes=21, output_stride=8, pretrained_backbone=True):
+    """Constructs an Evidential model with a ResNet-101 backbone.
+
+    Args:
+        num_classes (int): number of classes.
+        output_stride (int): output stride for deeplab.
+        pretrained_backbone (bool): If True, use the pretrained backbone.
+    """
+    return _load_model('evidentialdeeplab', 'resnet101', num_classes, output_stride=output_stride, pretrained_backbone=pretrained_backbone)
 
 
 def deeplabv3plus_mobilenet(num_classes=21, output_stride=8, pretrained_backbone=True):

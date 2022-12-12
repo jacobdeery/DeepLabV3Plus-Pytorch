@@ -67,7 +67,7 @@ def get_argparser():
     parser.add_argument("--continue_training", action='store_true', default=False)
 
     parser.add_argument("--loss_type", type=str, default='cross_entropy',
-                        choices=['cross_entropy', 'focal_loss'], help="loss type (default: False)")
+                        choices=['cross_entropy', 'focal_loss', 'evidential'], help="loss type (default: False)")
     parser.add_argument("--gpu_id", type=str, default='0',
                         help="GPU ID")
     parser.add_argument("--weight_decay", type=float, default=1e-4,
@@ -182,11 +182,18 @@ def validate(opts, model, loader, device, metrics, ret_samples_ids=None):
             images = images.to(device, dtype=torch.float32)
             labels = labels.to(device, dtype=torch.long)
 
-            outputs = model(images)
-            preds = outputs.detach().max(dim=1)[1].cpu().numpy()
             targets = labels.cpu().numpy()
 
-            uncertainties = get_uncertainty_msp(outputs).cpu().numpy()
+            outputs = model(images)
+
+            if 'evidential' in opts.model:
+                probs, uncertainties = model.module.postprocess(outputs)
+                preds = probs.max(dim=1)[1].cpu().numpy()
+                uncertainties = uncertainties.cpu().numpy()
+                # uncertainties = get_uncertainty_msp(probs).cpu().numpy()
+            else:
+                preds = outputs.detach().max(dim=1)[1].cpu().numpy()
+                uncertainties = get_uncertainty_msp(outputs).cpu().numpy()
 
             metrics.update(targets, preds, uncertainties)
             if ret_samples_ids is not None and i in ret_samples_ids:  # get vis samples
@@ -240,7 +247,7 @@ def validate(opts, model, loader, device, metrics, ret_samples_ids=None):
             plt.xlabel('Confidence', fontsize=20)
             plt.ylabel('Accuracy', fontsize=20)
 
-            # plt.savefig('results/ece_curve.png')
+            plt.savefig('results/ece_curve.png')
             plt.close()
 
     return score, ret_samples
@@ -283,9 +290,6 @@ def main():
     print("Dataset: %s, Train set: %d, Val set: %d" %
           (opts.dataset, len(train_dst), len(val_dst)))
 
-    # for i in val_dst:
-    #     pass
-
     # Set up model (all models are 'constructed at network.modeling)
     model = network.modeling.__dict__[opts.model](num_classes=opts.num_classes, output_stride=opts.output_stride)
     if opts.separable_conv and 'plus' in opts.model:
@@ -296,27 +300,31 @@ def main():
     metrics = StreamSegMetrics(opts.num_classes)
 
     # Set up optimizer
-    optimizer = torch.optim.SGD(params=[
-        {'params': model.backbone.parameters(), 'lr': 0.1 * opts.lr},
-        {'params': model.classifier.parameters(), 'lr': opts.lr},
-    ], lr=opts.lr, momentum=0.9, weight_decay=opts.weight_decay)
-    # optimizer = torch.optim.SGD(params=model.parameters(), lr=opts.lr, momentum=0.9, weight_decay=opts.weight_decay)
-    # torch.optim.lr_scheduler.StepLR(optimizer, step_size=opts.lr_decay_step, gamma=opts.lr_decay_factor)
+    if 'evidential' in opts.model:
+        optimizer = torch.optim.SGD(params=[
+            {'params': model.backbone.parameters(), 'lr': 0.1 * opts.lr},
+            {'params': model.evidence_regressor.parameters(), 'lr': opts.lr},
+        ], lr=opts.lr, momentum=0.9, weight_decay=opts.weight_decay)
+    else:
+        optimizer = torch.optim.SGD(params=[
+            {'params': model.backbone.parameters(), 'lr': 0.1 * opts.lr},
+            {'params': model.classifier.parameters(), 'lr': opts.lr},
+        ], lr=opts.lr, momentum=0.9, weight_decay=opts.weight_decay)
+
     if opts.lr_policy == 'poly':
         scheduler = utils.PolyLR(optimizer, opts.total_itrs, power=0.9)
     elif opts.lr_policy == 'step':
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=opts.step_size, gamma=0.1)
 
     # Set up criterion
-    # criterion = utils.get_loss(opts.loss_type)
     if opts.loss_type == 'focal_loss':
         criterion = utils.FocalLoss(ignore_index=255, size_average=True)
     elif opts.loss_type == 'cross_entropy':
         criterion = nn.CrossEntropyLoss(ignore_index=255, reduction='mean')
+    elif opts.loss_type == 'evidential':
+        criterion = utils.EvidentialLoss(ignore_index=255)
 
     def save_ckpt(path):
-        """ save current model
-        """
         torch.save({
             "cur_itrs": cur_itrs,
             "model_state": model.module.state_dict(),
@@ -363,6 +371,8 @@ def main():
         return
 
     interval_loss = 0
+    ckpt_interval = 100
+    torch.autograd.set_detect_anomaly(True)
     while True:  # cur_itrs < opts.total_itrs:
         # =====  Train  =====
         model.train()
@@ -390,9 +400,11 @@ def main():
                       (cur_epochs, cur_itrs, opts.total_itrs, interval_loss))
                 interval_loss = 0.0
 
-            if (cur_itrs) % opts.val_interval == 0:
+            if (cur_itrs) % ckpt_interval == 0:
                 save_ckpt('checkpoints/latest_%s_%s_os%d.pth' %
-                          (opts.model, opts.dataset, opts.output_stride))
+                    (opts.model, opts.dataset, opts.output_stride))
+
+            if (cur_itrs) % opts.val_interval == 0:
                 print("validation...")
                 model.eval()
                 val_score, ret_samples = validate(
