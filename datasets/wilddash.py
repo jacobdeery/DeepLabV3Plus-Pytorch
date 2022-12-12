@@ -12,8 +12,8 @@ class WildDash(data.Dataset):
                                                      'has_instances', 'ignore_in_eval', 'color'])
     classes = [
         CityscapesClass('unlabeled',            0, 255, 'void', 0, False, True, (0, 0, 0)),
-        CityscapesClass('ego vehicle',          1, 255, 'void', 0, False, True, (0, 0, 0)),
-        CityscapesClass('rectification border', 2, 255, 'void', 0, False, True, (0, 0, 0)),
+        CityscapesClass('ego vehicle',          1, 255, 'void', 0, False, True, (0, 20, 50)),
+        CityscapesClass('rectification border', 2, 255, 'void', 0, False, True, (20, 20, 20)),
         CityscapesClass('out of roi',           3, 255, 'void', 0, False, True, (0, 0, 0)),
         CityscapesClass('static',               4, 255, 'void', 0, False, True, (0, 0, 0)),
         CityscapesClass('dynamic',              5, 255, 'void', 0, False, True, (111, 74, 0)),
@@ -45,6 +45,11 @@ class WildDash(data.Dataset):
         CityscapesClass('train',                31, 16, 'vehicle', 7, True, False, (0, 80, 100)),
         CityscapesClass('motorcycle',           32, 17, 'vehicle', 7, True, False, (0, 0, 230)),
         CityscapesClass('bicycle',              33, 18, 'vehicle', 7, True, False, (119, 11, 32)),
+        CityscapesClass('pickup',               34, 19, 'vehicle', 7, True, False, (40, 0, 100)),
+        CityscapesClass('van',                  35, 20, 'vehicle', 7, True, False, (0, 40, 120)),
+        CityscapesClass('billboard',            36, 21, 'object', 3, False, False, (174, 46, 67)),
+        CityscapesClass('streetlight',          37, 22, 'object', 3, False, False, (210, 170, 100)),
+        CityscapesClass('road-marking',         38, 23, 'flat', 1, False, False, (196, 176, 128)),
         CityscapesClass('license plate',        -1, 255, 'vehicle', 7, False, True, (0, 0, 142)),
     ]
 

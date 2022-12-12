@@ -6,6 +6,7 @@ checkpoints
 .idea/
 __pycache__
 results
+results_*
 checkpoints_bak
 cityscapes
 test_results

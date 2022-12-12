@@ -43,7 +43,7 @@ class StreamSegMetrics(_StreamMetrics):
     def to_str(results):
         string = "\n"
         for k, v in results.items():
-            if k!="Class IoU":
+            if k not in ["Class IoU", "ECE Curve"]:
                 string += "%s: %f\n"%(k, v)
         return string
 
@@ -84,7 +84,6 @@ class StreamSegMetrics(_StreamMetrics):
 
             self.ece_curve[:, i] = [new_px, new_corr, new_conf]
 
-
     def get_results(self):
         """Returns accuracy score evaluation result.
             - overall accuracy
@@ -110,7 +109,8 @@ class StreamSegMetrics(_StreamMetrics):
                 "FreqW Acc": fwavacc,
                 "Mean IoU": mean_iu,
                 "Class IoU": cls_iu,
-                "ECE": ece
+                "ECE": ece,
+                "ECE Curve": self.ece_curve
             }
         
     def reset(self):

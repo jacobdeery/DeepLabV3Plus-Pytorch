@@ -224,6 +224,25 @@ def validate(opts, model, loader, device, metrics, ret_samples_ids=None):
                     img_id += 1
 
         score = metrics.get_results()
+
+        if "ECE Curve" in score:
+            ece_curve = score["ECE Curve"]
+            fig = plt.figure(figsize=(12.8, 9.6))
+
+            # plt.bar(metrics.bounds[:-1], metrics.bounds[:-1], align='edge', fc='salmon', ec='red', hatch='/', zorder=1)
+            plt.bar(metrics.bounds[:-1], ece_curve[1, :], align='edge', fc='blue', ec='black', zorder=2)
+            plt.plot([0, 1], [0, 1], linestyle='--', color='gray', linewidth=7, zorder=10)
+
+            plt.xticks(metrics.bounds[:-1], fontsize=16)
+            plt.yticks(fontsize=16)
+            plt.xlim(0, 1)
+            plt.ylim(0, 1)
+            plt.xlabel('Confidence', fontsize=20)
+            plt.ylabel('Accuracy', fontsize=20)
+
+            # plt.savefig('results/ece_curve.png')
+            plt.close()
+
     return score, ret_samples
 
 
@@ -263,6 +282,9 @@ def main():
         val_dst, batch_size=opts.val_batch_size, shuffle=True, num_workers=2)
     print("Dataset: %s, Train set: %d, Val set: %d" %
           (opts.dataset, len(train_dst), len(val_dst)))
+
+    # for i in val_dst:
+    #     pass
 
     # Set up model (all models are 'constructed at network.modeling)
     model = network.modeling.__dict__[opts.model](num_classes=opts.num_classes, output_stride=opts.output_stride)
